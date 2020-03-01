@@ -1,6 +1,63 @@
 <?php
 
-$innerEnv = [
+$Base64Env = [
+    //'APIKey', // used in heroku.
+    //'Region', // used in SCF.
+    //'SecretId', // used in SCF.
+    //'SecretKey', // used in SCF.
+    //'admin',
+    //'adminloginpage',
+    'background',
+    //'disktag',
+    //'function_name', // used in heroku.
+    //'language',
+    //'passfile',
+    'sitename',
+    //'theme',
+    //'Onedrive_ver',
+    //'client_id',
+    'client_secret',
+    'domain_path',
+    'guestup_path',
+    'diskname',
+    'public_path',
+    //'refresh_token',
+    //'token_expires',
+];
+
+$CommonEnv = [
+    'APIKey', // used in heroku.
+    'Region', // used in SCF.
+    'SecretId', // used in SCF.
+    'SecretKey', // used in SCF.
+    'admin',
+    'adminloginpage',
+    'background',
+    'disktag',
+    'function_name', // used in heroku.
+    'language',
+    'passfile',
+    'sitename',
+    'theme',
+];
+
+$ShowedCommonEnv = [
+    //'APIKey', // used in heroku.
+    //'Region', // used in SCF.
+    //'SecretId', // used in SCF.
+    //'SecretKey', // used in SCF.
+    //'admin',
+    'adminloginpage',
+    'background',
+    //'disktag',
+    //'function_name', // used in heroku.
+    'language',
+    'passfile',
+    'sitename',
+    'theme',
+];
+
+$InnerEnv = [
     'Onedrive_ver',
     'client_id',
     'client_secret',
@@ -12,7 +69,7 @@ $innerEnv = [
     'token_expires',
 ];
 
-$ShowedinnerEnv = [
+$ShowedInnerEnv = [
     //'Onedrive_ver',
     //'client_id',
     //'client_secret',
@@ -73,8 +130,7 @@ function config_oauth()
         // MS Customer
         // https://portal.azure.com
         $_SERVER['client_id'] = getConfig('client_id');
-        $_SERVER['client_secret'] = base64_decode(equal_replace(getConfig('client_secret'),1));
-        //getConfig('client_secret');
+        $_SERVER['client_secret'] = getConfig('client_secret');
         $_SERVER['oauth_url'] = 'https://login.microsoftonline.com/common/oauth2/v2.0/';
         $_SERVER['api_url'] = 'https://graph.microsoft.com/v1.0/me/drive/root';
         $_SERVER['scope'] = 'https://graph.microsoft.com/Files.ReadWrite.All offline_access';
@@ -115,14 +171,14 @@ function path_format($path)
     return $path;
 }
 
-function spurlencode($str,$splite='')
+function spurlencode($str,$split='')
 {
     $str = str_replace(' ', '%20',$str);
     $tmp='';
-    if ($splite!='') {
-        $tmparr=explode($splite,$str);
+    if ($split!='') {
+        $tmparr=explode($split,$str);
         for($x=0;$x<count($tmparr);$x++) {
-            if ($tmparr[$x]!='') $tmp .= $splite . urlencode($tmparr[$x]);
+            if ($tmparr[$x]!='') $tmp .= $split . urlencode($tmparr[$x]);
         }
     } else {
         $tmp = urlencode($str);
@@ -135,7 +191,9 @@ function equal_replace($str, $add = false)
 {
     if ($add) {
         while(strlen($str)%4) $str .= '=';
+        $str = urldecode(base64_decode($str));
     } else {
+        $str = base64_encode(urlencode($str));
         while(substr($str,-1)=='=') $str=substr($str,0,-1);
     }
     return $str;
@@ -155,7 +213,7 @@ function array_value_isnot_null($arr)
 function curl_request($url, $data = false, $headers = [])
 {
     if (!isset($headers['Accept'])) $headers['Accept'] = '*/*';
-    if (!isset($headers['Referer'])) $headers['Referer'] = $url;
+    //if (!isset($headers['Referer'])) $headers['Referer'] = $url;
     if (!isset($headers['Content-Type'])) $headers['Content-Type'] = 'application/x-www-form-urlencoded';
     $sendHeaders = array();
     foreach ($headers as $headerName => $headerVal) {
@@ -212,7 +270,7 @@ function encode_str_replace($str)
 
 function gethiddenpass($path,$passfile)
 {
-    $password=getcache($path . '/password');
+    $password=getcache('path_' . $path . '/?password');
     if ($password=='') {
     $ispassfile = fetch_files(spurlencode(path_format($path . '/' . $passfile),'/'));
     //echo $path . '<pre>' . json_encode($ispassfile, JSON_PRETTY_PRINT) . '</pre>';
@@ -222,14 +280,14 @@ function gethiddenpass($path,$passfile)
             $passwordf=explode("\n",$arr['body']);
             $password=$passwordf[0];
             $password=md5($password);
-            savecache($path . '/password', $password);
+            savecache('path_' . $path . '/?password', $password);
             return $password;
         } else {
             //return md5('DefaultP@sswordWhenNetworkError');
             return md5( md5(time()).rand(1000,9999) );
         }
     } else {
-        savecache($path . '/password', 'null');
+        savecache('path_' . $path . '/?password', 'null');
         if ($path !== '' ) {
             $path = substr($path,0,strrpos($path,'/'));
             return gethiddenpass($path,$passfile);
@@ -289,7 +347,16 @@ function get_timezone($timezone = '8')
 
 function message($message, $title = 'Message', $statusCode = 200)
 {
-    return output('<html><meta charset=utf-8><body><h1>' . $title . '</h1><p>' . $message . '</p></body></html>', $statusCode);
+    return output('
+<html>
+    <meta charset=utf-8>
+    <body>
+        <h1>' . $title . '</h1>
+        <p>
+' . $message . '
+        </p>
+    </body>
+</html>', $statusCode);
 }
 
 function needUpdate()
@@ -392,8 +459,8 @@ function bigfileupload($path)
         //echo json_encode($getoldupinfo, JSON_PRETTY_PRINT);
         if (isset($getoldupinfo['file'])&&$getoldupinfo['size']<5120) {
             $getoldupinfo_j = curl_request($getoldupinfo['@microsoft.graph.downloadUrl']);
-            $getoldupinfo = json_decode($getoldupinfo_j , true);
-            if ( json_decode( curl_request($getoldupinfo['uploadUrl']), true)['@odata.context']!='' ) return output($getoldupinfo_j);
+            $getoldupinfo = json_decode($getoldupinfo_j['body'], true);
+            if ( json_decode( curl_request($getoldupinfo['uploadUrl'])['body'], true)['@odata.context']!='' ) return output($getoldupinfo_j['body'], $getoldupinfo_j['stat']);
         }
         if (!$_SERVER['admin']) $filename = spurlencode( $fileinfo['name'] ) . '.scfupload';
         $response=MSAPI('createUploadSession',path_format($path1 . '/' . $filename),'{"item": { "@microsoft.graph.conflictBehavior": "fail"  }}',$_SERVER['access_token']);
@@ -482,6 +549,7 @@ function main($path)
         $response = curl_request( $_SERVER['oauth_url'] . 'token', 'client_id='. $_SERVER['client_id'] .'&client_secret='. $_SERVER['client_secret'] .'&grant_type=refresh_token&requested_token_use=on_behalf_of&refresh_token=' . $refresh_token );
         if ($response['stat']==200) $ret = json_decode($response['body'], true);
         if (!isset($ret['access_token'])) {
+            error_log($_SERVER['oauth_url'] . 'token'.'?client_id='. $_SERVER['client_id'] .'&client_secret='. $_SERVER['client_secret'] .'&grant_type=refresh_token&requested_token_use=on_behalf_of&refresh_token=' . $refresh_token);
             error_log('failed to get access_token. response' . json_encode($ret));
             throw new Exception($response['stat'].', failed to get access_token.'.$response['body']);
         }
@@ -495,6 +563,7 @@ function main($path)
     if ($_SERVER['ajax']) {
         if ($_GET['action']=='del_upload_cache'&&substr($_GET['filename'],-4)=='.tmp') {
             // del '.tmp' without login. 无需登录即可删除.tmp后缀文件
+            error_log('del.tmp:GET,'.json_encode($_GET,JSON_PRETTY_PRINT));
             $tmp = MSAPI('DELETE',path_format(path_format($_SERVER['list_path'] . path_format($path)) . '/' . spurlencode($_GET['filename']) ),'',$_SERVER['access_token']);
             $path1 = path_format($_SERVER['list_path'] . path_format($path));
             savecache('path_' . $path1, json_decode('{}',true), 1);
@@ -656,6 +725,42 @@ function adminoperate($path)
             return output('{"error":"'.getconstStr('CannotMove').'"}', 403);
         }
     }
+    if ($_GET['copy_name']!='') {
+        // copy 复制
+        $filename = spurlencode($_GET['copy_name']);
+        $filename = path_format($path1 . '/' . $filename);
+        $namearr = splitlast($_GET['copy_name'], '.');
+        if ($namearr[0]!='') {
+            $newname = $namearr[0] . ' (' . getconstStr('Copy') . ')';
+            if ($namearr[1]!='') $newname .= '.' . $namearr[1];
+        } else {
+            $newname = '.' . $namearr[1] . ' (' . getconstStr('Copy') . ')';
+        }
+        //$newname = spurlencode($newname);
+            //$foldername = path_format('/'.urldecode($path1).'/./');
+            //$data = '{"parentReference":{"path": "/drive/root:'.$foldername.'"}}';
+        $data = '{ "name": "' . $newname . '" }';
+        $result = MSAPI('copy', $filename, $data, $_SERVER['access_token']);
+        $num = 0;
+        while ($result['stat']==409 && json_decode($result['body'], true)['error']['code']=='nameAlreadyExists') {
+            $num++;
+            if ($namearr[0]!='') {
+                $newname = $namearr[0] . ' (' . getconstStr('Copy') . ' ' . $num . ')';
+                if ($namearr[1]!='') $newname .= '.' . $namearr[1];
+            } else {
+                $newname = '.' . $namearr[1] . ' ('.getconstStr('Copy'). ' ' . $num .')';
+            }
+            //$newname = spurlencode($newname);
+            $data = '{ "name": "' . $newname . '" }';
+            $result = MSAPI('copy', $filename, $data, $_SERVER['access_token']);
+        }
+        //echo $result['stat'].$result['body'];
+            //savecache('path_' . $path1, json_decode('{}',true), 1);
+            //if ($_GET['move_folder'] == '/../') $path2 = path_format( substr($path1, 0, strrpos($path1, '/')) . '/' );
+            //else $path2 = path_format( $path1 . '/' . $_GET['move_folder'] . '/' );
+            //savecache('path_' . $path2, json_decode('{}',true), 1);
+        return output($result['body'].json_encode($result['Location']), $result['stat']);
+    }
     if ($_POST['editfile']!='') {
         // edit 编辑
         $data = $_POST['editfile'];
@@ -685,10 +790,26 @@ function adminoperate($path)
     }
     if ($_GET['RefreshCache']) {
         //savecache('path_' . $path1, json_decode('{}',true), 1);
-        savecache($path . '/password', '', 1);
+        savecache('path_' . $path . '/?password', '', 1);
         return message('<meta http-equiv="refresh" content="2;URL=./">', getconstStr('RefreshCache'), 302);
     }
     return $tmparr;
+}
+
+function splitlast($str, $split)
+{
+    $pos = strrpos($str, $split);
+    if ($pos===false) {
+        $tmp[0] = $str;
+        $tmp[1] = '';
+    } elseif ($pos>0) {
+        $tmp[0] = substr($str, 0, $pos);
+        $tmp[1] = substr($str, $pos+1);
+    } else {
+        $tmp[0] = '';
+        $tmp[1] = $str;
+    }
+    return $tmp;
 }
 
 function MSAPI($method, $path, $data = '', $access_token)
@@ -732,7 +853,7 @@ function MSAPI($method, $path, $data = '', $access_token)
     }
     $headers['Authorization'] = 'Bearer ' . $access_token;
     if (!isset($headers['Accept'])) $headers['Accept'] = '*/*';
-    if (!isset($headers['Referer'])) $headers['Referer'] = $url;
+    //if (!isset($headers['Referer'])) $headers['Referer'] = $url;*
     $sendHeaders = array();
     foreach ($headers as $headerName => $headerVal) {
         $sendHeaders[] = $headerName . ': ' . $headerVal;
@@ -747,9 +868,11 @@ function MSAPI($method, $path, $data = '', $access_token)
     curl_setopt($ch, CURLOPT_HEADER, 0);
     curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 0);
     curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, 0);
+    //curl_setopt($ch, CURLOPT_FOLLOWLOCATION, 1);
     curl_setopt($ch, CURLOPT_HTTPHEADER, $sendHeaders);
     $response['body'] = curl_exec($ch);
     $response['stat'] = curl_getinfo($ch,CURLINFO_HTTP_CODE);
+    //$response['Location'] = curl_getinfo($ch);
     curl_close($ch);
     error_log($response['stat'].'
 '.$response['body'].'
@@ -765,12 +888,22 @@ function fetch_files($path = '/')
         // https://docs.microsoft.com/en-us/graph/api/driveitem-get?view=graph-rest-1.0
         // https://docs.microsoft.com/zh-cn/graph/api/driveitem-put-content?view=graph-rest-1.0&tabs=http
         // https://developer.microsoft.com/zh-cn/graph/graph-explorer
+        $pos = strrpos($path, '/');
+        if ($pos>1) {
+            $parentpath = substr($path, 0, $pos);
+            $filename = substr($path, $pos+1);
+            if ($parentfiles = getcache('path_' . $parentpath))
+                foreach ($parentfiles['children'] as $file)
+                    if ($file['name']==$filename)
+                        if (isset($file['@microsoft.graph.downloadUrl']))
+                            return $file;
+        }
         $url = $_SERVER['api_url'];
         if ($path !== '/') {
             $url .= ':' . $path;
             if (substr($url,-1)=='/') $url=substr($url,0,-1);
         }
-        $url .= '?expand=children(select=name,size,file,folder,parentReference,lastModifiedDateTime)';
+        $url .= '?expand=children(select=name,size,file,folder,parentReference,lastModifiedDateTime,@microsoft.graph.downloadUrl)';
         $arr = curl_request($url, false, ['Authorization' => 'Bearer ' . $_SERVER['access_token']]);
         if ($arr['stat']<500) {
             $files = json_decode($arr['body'], true);
@@ -779,7 +912,7 @@ function fetch_files($path = '/')
                 if ($files['folder']['childCount']>200) {
                 // files num > 200 , then get nextlink
                     $page = $_POST['pagenum']==''?1:$_POST['pagenum'];
-                    $files=fetch_files_children($files, $path, $page);
+                    $files=fetch_files_children($files, $path1, $page);
                 } else {
                 // files num < 200 , then cache
                     savecache('path_' . $path, $files);
@@ -798,6 +931,8 @@ function fetch_files($path = '/')
 
 function fetch_files_children($files, $path, $page)
 {
+    $path1 = path_format($path);
+    $path = path_format($_SERVER['list_path'] . path_format($path));
     $cachefilename = '.SCFcache_'.$_SERVER['function_name'];
     $maxpage = ceil($files['folder']['childCount']/200);
     if (!($files['children'] = getcache('files_' . $path . '_page_' . $page))) {

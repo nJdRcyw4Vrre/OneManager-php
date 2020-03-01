@@ -1,15 +1,5 @@
 <?php
 
-$commonEnv = [
-    //'admin',
-    'adminloginpage',
-    //'disktag',
-    'language',
-    'passfile',
-    'sitename',
-    'theme',
-];
-
 function getpath()
 {
     $_SERVER['base_path'] = path_format(substr($_SERVER['SCRIPT_NAME'], 0, -10) . '/');
@@ -48,23 +38,29 @@ function getGET()
 
 function getConfig($str, $disktag = '')
 {
-    global $innerEnv;
+    global $InnerEnv;
+    global $Base64Env;
     //include 'config.php';
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     $s = file_get_contents('config.php');
     $configs = substr($s, 18, -2);
     if ($configs!='') {
         $envs = json_decode($configs, true);
-        if (in_array($str, $innerEnv)) {
-            if (isset($envs[$disktag][$str])) return $envs[$disktag][$str];
-        } else if (isset($envs[$str])) return $envs[$str];
+        if (in_array($str, $InnerEnv)) {
+            if (in_array($str, $Base64Env)) return equal_replace($envs[$disktag][$str],1);
+            else return $envs[$disktag][$str];
+        } else {
+            if (in_array($str, $Base64Env)) return equal_replace($envs[$str],1);
+            else return $envs[$str];
+        }
     }
     return '';
 }
 
 function setConfig($arr, $disktag = '')
 {
-    global $innerEnv;
+    global $InnerEnv;
+    global $Base64Env;
     if ($disktag=='') $disktag = $_SERVER['disktag'];
     //include 'config.php';
     $s = file_get_contents('config.php');
@@ -74,8 +70,9 @@ function setConfig($arr, $disktag = '')
     //$indisk = 0;
     $operatedisk = 0;
     foreach ($arr as $k => $v) {
-        if (in_array($k, $innerEnv)) {
-            $envs[$disktag][$k] = $v;
+        if (in_array($k, $InnerEnv)) {
+            if (in_array($k, $Base64Env)) $envs[$disktag][$k] = equal_replace($v);
+            else $envs[$disktag][$k] = $v;
             /*$diskconfig[$k] = $v;
             $indisk = 1;*/
         } elseif ($k=='disktag_add') {
@@ -86,7 +83,8 @@ function setConfig($arr, $disktag = '')
             $envs[$v] = '';
             $operatedisk = 1;
         } else {
-            $envs[$k] = $v;
+            if (in_array($k, $Base64Env)) $envs[$k] = equal_replace($v);
+            else $envs[$k] = $v;
         }
     }
     /*if ($indisk) {
@@ -113,6 +111,8 @@ function setConfig($arr, $disktag = '')
 function get_refresh_token()
 {
     global $constStr;
+    global $CommonEnv;
+    foreach ($CommonEnv as $env) $envs .= '\'' . $env . '\', ';
     $url = path_format($_SERVER['PHP_SELF'] . '/');
     if ($_GET['authorization_code'] && isset($_GET['code'])) {
         $_SERVER['disktag'] = $_COOKIE['disktag'];
@@ -170,14 +170,16 @@ function get_refresh_token()
     }
     if ($_GET['install0']) {
         if ($_POST['disktag_add']!='' && ($_POST['Onedrive_ver']=='MS' || $_POST['Onedrive_ver']=='CN' || $_POST['Onedrive_ver']=='MSC')) {
+            if (in_array($_COOKIE['disktag'], $CommonEnv)) {
+                return message('Do not input ' . $envs . '<br><button onclick="location.href = location.href;">'.getconstStr('Reflesh').'</button><script>document.cookie=\'disktag=; path=/\';</script>', 'Error', 201);
+            }
             $_SERVER['disktag'] = $_COOKIE['disktag'];
             $tmp['disktag_add'] = $_POST['disktag_add'];
             $tmp['diskname'] = $_POST['diskname'];
             $tmp['Onedrive_ver'] = $_POST['Onedrive_ver'];
             if ($_POST['Onedrive_ver']=='MSC') {
                 $tmp['client_id'] = $_POST['client_id'];
-                $tmp['client_secret'] = equal_replace(base64_encode($_POST['client_secret']));
-                //$_POST['client_secret'];
+                $tmp['client_secret'] = $_POST['client_secret'];
             }
             $response = setConfig($tmp, $_COOKIE['disktag']);
             $title = getconstStr('MayinEnv');
@@ -200,8 +202,8 @@ Can not write config to file.<br>
     $app_url = "https://apps.dev.microsoft.com/?deepLink=".urlencode($deepLink);
     $html = '
     <form action="?AddDisk&install0" method="post" onsubmit="return notnull(this);">
-        '.getconstStr('OnedriveDiskTag').':<input type="text" name="disktag_add"><br>
-        '.getconstStr('OnedriveDiskName').':<input type="text" name="diskname"><br>
+        '.getconstStr('OnedriveDiskTag').':<input type="text" name="disktag_add" placeholder="' . getconstStr('EnvironmentsDescription')['disktag'] . '" style="width:100%"><br>
+        '.getconstStr('OnedriveDiskName').':<input type="text" name="diskname" placeholder="' . getconstStr('EnvironmentsDescription')['diskname'] . '" style="width:100%"><br>
         Onedrive_Ver：<br>
         <label><input type="radio" name="Onedrive_ver" value="MS" checked>MS: '.getconstStr('OndriveVerMS').'</label><br>
         <label><input type="radio" name="Onedrive_ver" value="CN">CN: '.getconstStr('OndriveVerCN').'</label><br>
@@ -209,7 +211,7 @@ Can not write config to file.<br>
             <div id="secret" style="display:none">
                 <a href="'.$app_url.'" target="_blank">'.getconstStr('GetSecretIDandKEY').'</a><br>
                 client_secret:<input type="text" name="client_secret"><br>
-                client_id(12345678-90ab-cdef-ghij-klmnopqrstuv):<input type="text" name="client_id"><br>
+                client_id:<input type="text" name="client_id" placeholder="12345678-90ab-cdef-ghij-klmnopqrstuv"><br>
             </div>
         </label><br>
         <input type="submit" value="'.getconstStr('Submit').'">
@@ -218,7 +220,12 @@ Can not write config to file.<br>
         function notnull(t)
         {
             if (t.disktag_add.value==\'\') {
-                alert(\'input Disk Tag\');
+                alert(\'Input Disk Tag\');
+                return false;
+            }
+            envs = [' . $envs . '];
+            if (envs.indexOf(t.disktag_add.value)>-1) {
+                alert("Do not input ' . $envs . '");
                 return false;
             }
             var reg = /^[a-zA-Z]([-_a-zA-Z0-9]{1,20})$/;
@@ -323,11 +330,10 @@ function RewriteEngineOn()
 function EnvOpt($function_name, $needUpdate = 0)
 {
     global $constStr;
-    global $commonEnv;
-    global $innerEnv;
-    global $ShowedinnerEnv;
-    asort($commonEnv);
-    asort($ShowedinnerEnv);
+    global $ShowedCommonEnv;
+    global $ShowedInnerEnv;
+    asort($ShowedCommonEnv);
+    asort($ShowedInnerEnv);
     $html = '<title>OneManager '.getconstStr('Setup').'</title>';
     /*if ($_POST['updateProgram']==getconstStr('updateProgram')) {
         $response = json_decode(updataProgram($function_name, $Region, $namespace), true)['Response'];
@@ -349,7 +355,7 @@ namespace:' . $namespace . '<br>
     if ($_POST['submit1']) {
         $_SERVER['disk_oprating'] = '';
         foreach ($_POST as $k => $v) {
-            if (in_array($k, $commonEnv)||in_array($k, $innerEnv)||$k=='disktag_del' || $k=='disktag_add') {
+            if (in_array($k, $ShowedCommonEnv)||in_array($k, $ShowedInnerEnv)||$k=='disktag_del' || $k=='disktag_add') {
                 $tmp[$k] = $v;
             }
             if ($k == 'disk') $_SERVER['disk_oprating'] = $v;
@@ -378,8 +384,8 @@ namespace:' . $namespace . '<br>
         $preurl = path_format($_SERVER['PHP_SELF'] . '/');
     }
     $html .= '
-        <a href="'.$preurl.'">'.getconstStr('Back').'</a>&nbsp;&nbsp;&nbsp;<a href="'.$_SERVER['base_path'].'">'.getconstStr('Back').getconstStr('Home').'</a><br>
-        <a href="https://github.com/qkqpttgf/OneManager-php">Github</a><br>';
+<a href="'.$preurl.'">'.getconstStr('Back').'</a>&nbsp;&nbsp;&nbsp;<a href="'.$_SERVER['base_path'].'">'.getconstStr('Back').getconstStr('Home').'</a><br>
+<a href="https://github.com/qkqpttgf/OneManager-php">Github</a><br>';
     /*if ($needUpdate) {
         $html .= '<pre>' . $_SERVER['github_version'] . '</pre>
         <form action="" method="post">
@@ -388,13 +394,13 @@ namespace:' . $namespace . '<br>
     } else {
         $html .= getconstStr('NotNeedUpdate');
     }*/
-    $html .= '<br>
-    <table border=1 width=100%>
+    $html .= 'Can not update by a click!<br>
+<table border=1 width=100%>
     <form name="common" action="" method="post">
         <tr>
             <td colspan="2">'.getconstStr('PlatformConfig').'</td>
         </tr>';
-    foreach ($commonEnv as $key) {
+    foreach ($ShowedCommonEnv as $key) {
         if ($key=='language') {
             $html .= '
         <tr>
@@ -446,24 +452,24 @@ namespace:' . $namespace . '<br>
     $html .= '
         <tr><td><input type="submit" name="submit1" value="'.getconstStr('Setup').'"></td></tr>
     </form>
-    </table><br>';
+</table><br>';
     foreach (explode("|",getConfig('disktag')) as $disktag) {
         if ($disktag!='') {
             $html .= '
-    <table border=1 width=100%>
-        <form action="" method="post">
+<table border=1 width=100%>
+    <form action="" method="post">
         <tr>
             <td colspan="2">'.$disktag.'：
             <input type="hidden" name="disktag_del" value="'.$disktag.'">
             <input type="submit" name="submit1" value="'.getconstStr('DelDisk').'">
             </td>
         </tr>
-        </form>';
+    </form>';
             if (getConfig('refresh_token', $disktag)!='') {
                 $html .= '
-        <form name="'.$disktag.'" action="" method="post">
+    <form name="'.$disktag.'" action="" method="post">
         <input type="hidden" name="disk" value="'.$disktag.'">';
-                foreach ($ShowedinnerEnv as $key) {
+                foreach ($ShowedInnerEnv as $key) {
                     $html .= '
         <tr>
             <td><label>' . $key . '</label></td>
@@ -472,13 +478,13 @@ namespace:' . $namespace . '<br>
                 }
                 $html .= '
         <tr><td><input type="submit" name="submit1" value="'.getconstStr('Setup').'"></td></tr>
-        </form>';
+    </form>';
             }
             $html .= '
-    </table><br>';
+</table><br>';
         }
     }
     $html .= '
-    <a href="?AddDisk">'.getconstStr('AddDisk').'</a>';
+<a href="?AddDisk">'.getconstStr('AddDisk').'</a>';
     return message($html, getconstStr('Setup'));
 }
